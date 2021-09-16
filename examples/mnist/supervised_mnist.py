@@ -1,7 +1,9 @@
 import os
+import sys 
 import torch
 import numpy as np
 import argparse
+from pathlib import Path 
 import matplotlib.pyplot as plt
 
 from torchvision import transforms
@@ -23,11 +25,18 @@ from bindsnet.analysis.plotting import (
     plot_voltages,
 )
 
+
+data_path = './outputs/'
+Path(data_path).mkdir(parents=True, exist_ok=True)
+
+f = open(data_path + "evaluation.out", 'w')
+sys.stdout = f 
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
-parser.add_argument("--n_neurons", type=int, default=100)
-parser.add_argument("--n_train", type=int, default=60000)
-parser.add_argument("--n_test", type=int, default=10000)
+parser.add_argument("--n_neurons", type=int, default=400)
+parser.add_argument("--n_train", type=int, default=20)
+parser.add_argument("--n_test", type=int, default=10)
 parser.add_argument("--n_clamp", type=int, default=1)
 parser.add_argument("--exc", type=float, default=22.5)
 parser.add_argument("--inh", type=float, default=120)
@@ -64,7 +73,8 @@ plot = args.plot
 gpu = args.gpu
 device_id = args.device_id
 
-# Sets up Gpu use
+
+# Sets up GPU use
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if gpu and torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
@@ -76,6 +86,15 @@ else:
 
 torch.set_num_threads(os.cpu_count() - 1)
 print("Running on Device = ", device)
+
+print('A', sys.version)
+print('B', torch.__version__)
+print('C', torch.cuda.is_available())
+print('D', torch.backends.cudnn.enabled)
+device = torch.device('cuda')
+print('E', torch.cuda.get_device_properties(device))
+print('F', torch.tensor([1.0, 2.0]).cuda())
+
 
 if not train:
     update_interval = n_test
@@ -114,9 +133,7 @@ dataset = MNIST(
     None,
     root=os.path.join("..", "..", "data", "MNIST"),
     download=True,
-    transform=transforms.Compose(
-        [transforms.ToTensor(), transforms.Lambda(lambda x: x * intensity)]
-    ),
+    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x * intensity)]),
 )
 
 # Create a dataloader to iterate and batch data
@@ -165,35 +182,22 @@ for (i, datum) in enumerate(dataloader):
     if i % update_interval == 0 and i > 0:
         # Get network predictions.
         all_activity_pred = all_activity(spike_record, assignments, n_classes)
-        proportion_pred = proportion_weighting(
-            spike_record, assignments, proportions, n_classes
-        )
+        proportion_pred = proportion_weighting(spike_record, assignments, proportions, n_classes)
 
         # Compute network accuracy according to available classification strategies.
-        accuracy["all"].append(
-            100 * torch.sum(labels.long() == all_activity_pred).item() / update_interval
-        )
-        accuracy["proportion"].append(
-            100 * torch.sum(labels.long() == proportion_pred).item() / update_interval
-        )
+        accuracy["all"].append(100 * torch.sum(labels.long() == all_activity_pred).item() / update_interval)
+        accuracy["proportion"].append(100 * torch.sum(labels.long() == proportion_pred).item() / update_interval)
 
-        print(
-            "\nAll activity accuracy: %.2f (last), %.2f (average), %.2f (best)"
-            % (accuracy["all"][-1], np.mean(accuracy["all"]), np.max(accuracy["all"]))
-        )
-        print(
-            "Proportion weighting accuracy: %.2f (last), %.2f (average), %.2f (best)\n"
-            % (
-                accuracy["proportion"][-1],
-                np.mean(accuracy["proportion"]),
-                np.max(accuracy["proportion"]),
-            )
-        )
+        print("\nAll activity accuracy: %.2f (last), %.2f (average), %.2f (best)" % (accuracy["all"][-1], np.mean(accuracy["all"]), np.max(accuracy["all"])))
+
+        print("Proportion weighting accuracy: %.2f (last), %.2f (average), %.2f (best)\n" % (accuracy["proportion"][-1], np.mean(accuracy["proportion"]), np.max(accuracy["proportion"])))
 
         # Assign labels to excitatory layer neurons.
-        assignments, proportions, rates = assign_labels(
-            spike_record, labels, n_classes, rates
-        )
+        assignments, proportions, rates = assign_labels(spike_record, labels, n_classes, rates)
+
+        spike_record_np = spike_record.cpu().detach().numpy()
+        np.save(data_path + "spike_record{}".format(i), spike_record_np)
+
 
     # Add the current label to the list of labels for this update_interval
     labels[i % update_interval] = label[0]
@@ -218,26 +222,18 @@ for (i, datum) in enumerate(dataloader):
     if plot:
         inpt = inputs["X"].view(time, 784).sum(0).view(28, 28)
         input_exc_weights = network.connections[("X", "Ae")].w
-        square_weights = get_square_weights(
-            input_exc_weights.view(784, n_neurons), n_sqrt, 28
-        )
+        square_weights = get_square_weights(input_exc_weights.view(784, n_neurons), n_sqrt, 28)
         square_assignments = get_square_assignments(assignments, n_sqrt)
         voltages = {"Ae": exc_voltages, "Ai": inh_voltages}
 
-        inpt_axes, inpt_ims = plot_input(
-            image.sum(1).view(28, 28), inpt, label=label, axes=inpt_axes, ims=inpt_ims
-        )
-        spike_ims, spike_axes = plot_spikes(
-            {layer: spikes[layer].get("s").view(time, 1, -1) for layer in spikes},
-            ims=spike_ims,
-            axes=spike_axes,
-        )
-        weights_im = plot_weights(square_weights, im=weights_im)
-        assigns_im = plot_assignments(square_assignments, im=assigns_im)
-        perf_ax = plot_performance(accuracy, x_scale=update_interval, ax=perf_ax)
-        voltage_ims, voltage_axes = plot_voltages(
-            voltages, ims=voltage_ims, axes=voltage_axes
-        )
+        inpt_axes, inpt_ims = plot_input(image.sum(1).view(28, 28), inpt, label=label, axes=inpt_axes, ims=inpt_ims)
+        
+        spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time, 1, -1) for layer in spikes}, ims=spike_ims, axes=spike_axes)
+
+        weights_im = plot_weights(square_weights, im=weights_im, save="weights.png")
+        assigns_im = plot_assignments(square_assignments, im=assigns_im, save="assignments.png")
+        perf_ax = plot_performance(accuracy, x_scale=update_interval, ax=perf_ax, save="performance.png")
+        voltage_ims, voltage_axes = plot_voltages(voltages, ims=voltage_ims, axes=voltage_axes)
 
         plt.pause(1e-8)
 
@@ -245,8 +241,18 @@ for (i, datum) in enumerate(dataloader):
     pbar.set_description_str("Train progress: ")
     pbar.update()
 
+
+spike_record_np = spike_record.cpu().detach().numpy()
+np.save(data_path + "resultPopVecs{}".format(n_train), spike_record_np)
+
+labels_np = labels.cpu().detach().numpy()
+np.save(data_path + "inputNumbers{}".format(n_train), labels_np)
+
 print("Progress: %d / %d \n" % (n_train, n_train))
 print("Training complete.\n")
+
+
+
 
 print("Testing....\n")
 
@@ -257,9 +263,7 @@ test_dataset = MNIST(
     root=os.path.join("..", "..", "data", "MNIST"),
     download=True,
     train=False,
-    transform=transforms.Compose(
-        [transforms.ToTensor(), transforms.Lambda(lambda x: x * intensity)]
-    ),
+    transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x * intensity)])
 )
 
 # Sequence of accuracy estimates.
@@ -291,9 +295,8 @@ for step, batch in enumerate(test_dataset):
     label_tensor = torch.tensor(batch["label"], device=device)
 
     # Get network predictions.
-    all_activity_pred = all_activity(
-        spikes=spike_record, assignments=assignments, n_labels=n_classes
-    )
+    all_activity_pred = all_activity(spikes=spike_record, assignments=assignments, n_labels=n_classes)
+
     proportion_pred = proportion_weighting(
         spikes=spike_record,
         assignments=assignments,
@@ -303,16 +306,21 @@ for step, batch in enumerate(test_dataset):
 
     # Compute network accuracy according to available classification strategies.
     accuracy["all"] += float(torch.sum(label_tensor.long() == all_activity_pred).item())
-    accuracy["proportion"] += float(
-        torch.sum(label_tensor.long() == proportion_pred).item()
-    )
+
+    accuracy["proportion"] += float(torch.sum(label_tensor.long() == proportion_pred).item())
 
     network.reset_state_variables()  # Reset state variables.
 
-    pbar.set_description_str(
-        f"Accuracy: {(max(accuracy['all'] ,accuracy['proportion'] ) / (step+1)):.3}"
-    )
+    pbar.set_description_str( f"Accuracy: {(max(accuracy['all'] ,accuracy['proportion'] ) / (step+1)):.3}" )
     pbar.update()
+
+
+spike_record_np = spike_record.cpu().detach().numpy()
+np.save(data_path + "resultPopVecs{}".format(n_test), spike_record_np)
+
+label_tensor_np = label_tensor.cpu().detach().numpy()
+np.save(data_path + "inputNumbers{}".format(n_test), label_tensor_np)
+
 
 print("\nAll activity accuracy: %.2f" % (accuracy["all"] / n_test))
 print("Proportion weighting accuracy: %.2f \n" % (accuracy["proportion"] / n_test))

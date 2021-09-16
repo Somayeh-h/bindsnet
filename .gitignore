@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# results 
+outputs/
+*.png 
+*.npy
+
 # Distribution / packaging
 .Python
 env/
