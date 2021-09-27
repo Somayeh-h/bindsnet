@@ -10,6 +10,10 @@ __pycache__/
 outputs/
 *.png 
 *.npy
+BindsNet_installation_commands.txt
+nordland_imageNames.txt 
+
+._.DS_Store
 
 # Distribution / packaging
 .Python
