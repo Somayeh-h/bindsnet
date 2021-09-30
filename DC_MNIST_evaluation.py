@@ -272,7 +272,7 @@ def get_weights_matrix(weightsPath, name, n_input, n_e):
     values = np.asarray(value_arr)
     XA_values = np.copy(values)
 
-    return XA_values
+    return XeAe_w
 
     
 def show_qry_match_gt_imgs_basic(testImgs, trainImgs, orgTestImgs, orgTrainImgs, testing_labels, matchIndices, imgIdx, data_path, saveFig=False):  
@@ -1151,16 +1151,16 @@ if __name__ == "__main__":
     parser.add_argument('--skip', type=int, default=8, help='The number of images to skip between each place label.')
     parser.add_argument('--offset_after_skip', type=int, default=0, help='The offset to apply for selecting places after skipping every n images.')
     parser.add_argument('--folder_id', type=str, default='NRD', help='Folder name of dataset to be used.')
-    parser.add_argument('--num_train_imgs', type=int, default=50, help='Number of entire training images.')
-    parser.add_argument('--num_test_imgs', type=int, default=25, help='Number of entire testing images.')
-    parser.add_argument('--first_epoch', type=int, default=1250, help='For use of neuronal assignments, the first training iteration number in saved items.')
-    parser.add_argument('--last_epoch', type=int, default=1251, help='For use of neuronal assignments, the last training iteration number in saved items.')
-    parser.add_argument('--update_interval', type=int, default=250, help='The number of iterations to save at one time in output matrix.')
-    parser.add_argument('--epochs', type=int, default=25, help='Simulation time step for every simulated object unless specified locally within object.')
+    parser.add_argument('--num_train_imgs', type=int, default=200, help='Number of entire training images.')
+    parser.add_argument('--num_test_imgs', type=int, default=100, help='Number of entire testing images.')
+    parser.add_argument('--first_epoch', type=int, default=12000, help='For use of neuronal assignments, the first training iteration number in saved items.')
+    parser.add_argument('--last_epoch', type=int, default=12001, help='For use of neuronal assignments, the last training iteration number in saved items.')
+    parser.add_argument('--update_interval', type=int, default=600, help='The number of iterations to save at one time in output matrix.')
+    parser.add_argument('--epochs', type=int, default=60, help='Simulation time step for every simulated object unless specified locally within object.')
     parser.add_argument('--use_all', type=int, default=4, help='Simulation time step for every simulated object unless specified locally within object.')
     parser.add_argument('--n_e', type=int, default=400, help='Number of excitatory output neurons. The number of inhibitory neurons are the same.')
     parser.add_argument('--plot', dest="plot", action="store_true", help='Boolean indicator for plotting per-label figures.')
-    parser.set_defaults()
+    parser.set_defaults(plot=True)
 
     args = parser.parse_args()
 

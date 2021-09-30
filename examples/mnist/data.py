@@ -208,7 +208,7 @@ def processImageDataset(path, type, imWidth, imHeight, time=350, dt=1, ftType="d
 
                 encoded_frame = poisson(torch.from_numpy(flattened_frame), time, dt, device="cpu")
 
-                encoded_frame = encoded_frame.view([1, 350, 1, 28, 28])
+                encoded_frame = encoded_frame.view([1, int(350/dt), 1, 28, 28])
 
                 encoded_frames.append(encoded_frame)
 

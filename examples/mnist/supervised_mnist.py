@@ -49,8 +49,8 @@ def save_connections(connections, interval=''):
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=400)
-parser.add_argument("--n_train", type=int, default=25)
-parser.add_argument("--n_test", type=int, default=25)
+parser.add_argument("--n_train", type=int, default=100)
+parser.add_argument("--n_test", type=int, default=100)
 parser.add_argument("--n_clamp", type=int, default=1)
 parser.add_argument("--exc", type=float, default=22.5)
 parser.add_argument("--inh", type=float, default=120)
@@ -58,13 +58,13 @@ parser.add_argument("--theta_plus", type=float, default=0.05)
 parser.add_argument("--time", type=int, default=350)
 parser.add_argument("--dt", type=int, default=1)
 parser.add_argument("--intensity", type=float, default=4) # 32
-parser.add_argument("--update_interval", type=int, default=250)
+parser.add_argument("--update_interval", type=int, default=600)
 parser.add_argument("--train", dest="train", action="store_true")
 parser.add_argument("--test", dest="train", action="store_false")
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
 parser.add_argument("--device_id", type=int, default=0)
-parser.add_argument("--epochs", type=int, default=25)
+parser.add_argument("--epochs", type=int, default=60)
 parser.set_defaults(plot=True, gpu=True, train=True)
 
 args = parser.parse_args()
@@ -293,8 +293,10 @@ for i in range(num_examples):
         
         spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time, 1, -1) for layer in spikes}, ims=spike_ims, axes=spike_axes)
 
+        square_weights_np = square_weights.cpu().detach().numpy()
+        max_square_weights = square_weights_np.max()
 
-        weights_im = plot_weights(square_weights, im=weights_im, wmax=1, save="weights.png")
+        weights_im = plot_weights(square_weights, im=weights_im, wmax=max_square_weights, save="weights.png")
         assigns_im = plot_assignments(square_assignments, im=assigns_im, save="assignments.png")
         perf_ax = plot_performance(accuracy, x_scale=update_interval, ax=perf_ax, save="performance.png")
         voltage_ims, voltage_axes = plot_voltages(voltages, ims=voltage_ims, axes=voltage_axes)
@@ -357,7 +359,7 @@ for step in range(n_test):
         break
     # Get next input sample.
 
-    image = testing['x'][step].view([350, 1, 28, 28])                      #  batch["encoded_image"]       
+    image = testing['x'][step].view([int(350/dt), 1, 28, 28])                      #  batch["encoded_image"]       
     label = testing['y'][step][0]       # batch["label"]   
 
     inputs = {"X": image.view(int(time / dt), 1, 1, 28, 28)}
