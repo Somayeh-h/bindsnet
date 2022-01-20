@@ -156,6 +156,7 @@ class DiehlAndCook2015(Network):
             tc_trace=20.0,
             theta_plus=theta_plus,
             tc_theta_decay=tc_theta_decay,
+            one_spike=False,
         )
         inh_layer = LIFNodes(
             n=self.n_neurons,

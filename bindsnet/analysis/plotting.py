@@ -758,5 +758,6 @@ def plot_voltages(
             plt.setp(axes, xlabel="Simulation time", ylabel="Voltage")
 
         plt.tight_layout()
+        plt.savefig("voltages")
 
     return ims, axes

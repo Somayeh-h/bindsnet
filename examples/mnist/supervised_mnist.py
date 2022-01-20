@@ -1,6 +1,7 @@
 import os
 import sys 
 import torch
+import time
 import numpy as np
 import argparse
 from pathlib import Path 
@@ -49,7 +50,7 @@ def save_connections(connections, interval=''):
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=400)
-parser.add_argument("--n_train", type=int, default=100)
+parser.add_argument("--n_train", type=int, default=10)
 parser.add_argument("--n_test", type=int, default=100)
 parser.add_argument("--n_clamp", type=int, default=1)
 parser.add_argument("--exc", type=float, default=22.5)
@@ -58,14 +59,14 @@ parser.add_argument("--theta_plus", type=float, default=0.05)
 parser.add_argument("--time", type=int, default=350)
 parser.add_argument("--dt", type=int, default=1)
 parser.add_argument("--intensity", type=float, default=4) # 32
-parser.add_argument("--update_interval", type=int, default=600)
+parser.add_argument("--update_interval", type=int, default=50)
 parser.add_argument("--train", dest="train", action="store_true")
 parser.add_argument("--test", dest="train", action="store_false")
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
 parser.add_argument("--device_id", type=int, default=0)
-parser.add_argument("--epochs", type=int, default=60)
-parser.set_defaults(plot=True, gpu=True, train=True)
+parser.add_argument("--epochs", type=int, default=10)
+parser.set_defaults(plot=False, gpu=True, train=True)
 
 args = parser.parse_args()
 
@@ -78,7 +79,7 @@ n_clamp = args.n_clamp
 exc = args.exc
 inh = args.inh
 theta_plus = args.theta_plus
-time = args.time
+time_p = args.time
 dt = args.dt
 intensity = args.intensity
 update_interval = args.update_interval
@@ -157,20 +158,20 @@ if gpu:
     network.to("cuda")
 
 # Voltage recording for excitatory and inhibitory layers.
-exc_voltage_monitor = Monitor(network.layers["Ae"], ["v"], time=time, device=device)
-inh_voltage_monitor = Monitor(network.layers["Ai"], ["v"], time=time, device=device)
+exc_voltage_monitor = Monitor(network.layers["Ae"], ["v"], time=time_p, device=device)
+inh_voltage_monitor = Monitor(network.layers["Ai"], ["v"], time=time_p, device=device)
 network.add_monitor(exc_voltage_monitor, name="exc_voltage")
 network.add_monitor(inh_voltage_monitor, name="inh_voltage")
 
 dataset = MNIST(
-    PoissonEncoder(time=time, dt=dt),
+    PoissonEncoder(time=time_p, dt=dt),
     None,
     root=os.path.join("..", "..", "data", "MNIST"),
     download=True,
     transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: x * intensity)]),
 )
 
-frames, encoded_frames = processImageDataset(train_data_path, "train", imWidth, imHeight, time=time, dt=dt, desired_num_labels=n_train, intensity=intensity)
+frames, encoded_frames = processImageDataset(train_data_path, "train", imWidth, imHeight, time=time_p, dt=dt, desired_num_labels=n_train, intensity=intensity)
 frames = np.array(frames)
 
 y = list(range( int(frames.shape[0] / (len(train_data_path)/len(org_data_path)) ) ))
@@ -180,7 +181,7 @@ y = [ [y[i]] for i in range(len(y))]
 training = {'x': encoded_frames, 'y': y}
 
 
-frames, encoded_frames_t = processImageDataset(test_data_path, "test", imWidth, imHeight, time=time, dt=dt, desired_num_labels=n_test, intensity=intensity)
+frames, encoded_frames_t = processImageDataset(test_data_path, "test", imWidth, imHeight, time=time_p, dt=dt, desired_num_labels=n_test, intensity=intensity)
 frames = np.array(frames)
 
 y = list(range( frames.shape[0] ))
@@ -198,7 +199,7 @@ testing = {'x': encoded_frames_t, 'y': y_t}
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
 
 # Record spikes during the simulation.
-spike_record = torch.zeros(update_interval, time, n_neurons, device=device)
+spike_record = torch.zeros(update_interval, time_p, n_neurons, device=device)
 
 # Neuron assignments and spike proportions.
 assignments = -torch.ones_like(torch.Tensor(n_neurons), device=device)
@@ -213,7 +214,7 @@ labels = torch.empty(update_interval, device=device)
 
 spikes = {}
 for layer in set(network.layers):
-    spikes[layer] = Monitor(network.layers[layer], state_vars=["s"], time=time)
+    spikes[layer] = Monitor(network.layers[layer], state_vars=["s"], time=time_p)
     network.add_monitor(spikes[layer], name="%s_spikes" % layer)
 
 # Train the network.
@@ -229,12 +230,15 @@ perf_ax = None
 voltage_axes = None
 voltage_ims = None
 
+inference_time_all = []
+
 pbar = tqdm(total=num_examples) 
 # for (i, datum) in enumerate(dataloader): n_train
 for i in range(num_examples):
     if i > num_examples:
         break
-
+    
+    start_j = time.time() 
     image = training['x'][i%n_train]                            # datum["encoded_image"]
     label = torch.Tensor(training['y'][i%n_train])              # datum["label"]
 
@@ -265,17 +269,17 @@ for i in range(num_examples):
     choice = np.random.choice(int(n_neurons / n_classes), size=n_clamp, replace=False)
     clamp = {"Ae": per_class * label.long() + torch.Tensor(choice).long()}
     if gpu:
-        inputs = {"X": image.cuda().view(int(time/dt), 1, 1, 28, 28)}
+        inputs = {"X": image.cuda().view(int(time_p/dt), 1, 1, 28, 28)}
     else:
-        inputs = {"X": image.view(int(time/dt), 1, 1, 28, 28)}
-    network.run(inputs=inputs, time=time, clamp=clamp)
+        inputs = {"X": image.view(int(time_p/dt), 1, 1, 28, 28)}
+    network.run(inputs=inputs, time=time_p, clamp=clamp)
 
     # Get voltage recording.
     exc_voltages = exc_voltage_monitor.get("v")
     inh_voltages = inh_voltage_monitor.get("v")
 
     # Add to spikes recording.
-    spike_record[i % update_interval] = spikes["Ae"].get("s").view(time, n_neurons)
+    spike_record[i % update_interval] = spikes["Ae"].get("s").view(time_p, n_neurons)
 
     if i % update_interval == 0 and i > 0:
         save_connections(network.connections, str(i))
@@ -283,7 +287,7 @@ for i in range(num_examples):
 
     # Optionally plot various simulation information.
     if plot:
-        inpt = inputs["X"].view(int(time/dt), 784).sum(0).view(28, 28)
+        inpt = inputs["X"].view(int(time_p/dt), 784).sum(0).view(28, 28)
         input_exc_weights = network.connections[("X", "Ae")].w
         square_weights = get_square_weights(input_exc_weights.view(784, n_neurons), n_sqrt, 28)
         square_assignments = get_square_assignments(assignments, n_sqrt)
@@ -291,7 +295,7 @@ for i in range(num_examples):
 
         inpt_axes, inpt_ims = plot_input(image.sum(1).view(28, 28), inpt, label=label, axes=inpt_axes, ims=inpt_ims)
         
-        spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time, 1, -1) for layer in spikes}, ims=spike_ims, axes=spike_axes)
+        spike_ims, spike_axes = plot_spikes({layer: spikes[layer].get("s").view(time_p, 1, -1) for layer in spikes}, ims=spike_ims, axes=spike_axes)
 
         square_weights_np = square_weights.cpu().detach().numpy()
         max_square_weights = square_weights_np.max()
@@ -304,6 +308,19 @@ for i in range(num_examples):
         plt.pause(1e-8)
 
     network.reset_state_variables()  # Reset state variables.
+    
+    if i < 100: 
+        end_j = time.time()
+        inference_time = end_j - start_j 
+        inference_time_all.append( inference_time )
+
+    if i == 100: 
+        mean_inference_time = np.mean(inference_time_all)
+        print("Mean inference time: ", mean_inference_time)
+        avg_inference_timeToSaveName = data_path + "avgInferenceTime_ne" + str(n_neurons) + "_train"
+        np.save(avg_inference_timeToSaveName, np.array(inference_time_all) )
+                
+    
     pbar.set_description_str("Train progress: ")
     pbar.update()
 
@@ -333,7 +350,7 @@ print("Testing....\n")
 
 # Load MNIST data.
 test_dataset = MNIST(
-    PoissonEncoder(time=time, dt=dt),
+    PoissonEncoder(time=time_p, dt=dt),
     None,
     root=os.path.join("..", "..", "data", "MNIST"),
     download=True,
@@ -345,30 +362,46 @@ test_dataset = MNIST(
 accuracy = {"all": 0, "proportion": 0}
 
 # Record spikes during the simulation.
-spike_record = torch.zeros(1, time, n_neurons, device=device) # int(time / dt)
-spike_records = torch.zeros(n_test, time, n_neurons, device=device) 
+spike_record = torch.zeros(1, time_p, n_neurons, device=device) # int(time / dt)
+spike_records = torch.zeros(n_test, time_p, n_neurons, device=device) 
 
 # Train the network.
 print("\nBegin testing\n")
 network.train(mode=False)
 
+inference_time_all_test = [] 
+
 pbar = tqdm(total=n_test)
 # for step, batch in enumerate(test_dataset):
 for step in range(n_test):
-    if step > n_test:
-        break
-    # Get next input sample.
+    # if step > n_test:
+    #     break
 
+    start_j = time.time() 
+    # Get next input sample.
     image = testing['x'][step].view([int(350/dt), 1, 28, 28])                      #  batch["encoded_image"]       
     label = testing['y'][step][0]       # batch["label"]   
 
-    inputs = {"X": image.view(int(time / dt), 1, 1, 28, 28)}
+    inputs = {"X": image.view(int(time_p / dt), 1, 1, 28, 28)}
     if gpu:
         inputs = {k: v.cuda() for k, v in inputs.items()}
 
     # Run the network on the input.
-    network.run(inputs=inputs, time=time, input_time_dim=1)
+    network.run(inputs=inputs, time=time_p, input_time_dim=1)
 
+    
+    if step < 100: 
+        end_j = time.time()
+        inference_time = end_j - start_j 
+        inference_time_all_test.append( inference_time )
+
+    if step == 99: 
+        print("Inference time all: ", inference_time_all_test)
+        mean_inference_time_test = np.mean(inference_time_all_test)
+        print("Mean inference time: ", mean_inference_time_test)
+        avg_inference_timeToSaveName = data_path + "avgInferenceTime_ne" + str(n_neurons) + "_test_E30"
+        np.save(avg_inference_timeToSaveName, np.array(inference_time_all_test) )
+        
     # Add to spikes recording.
     spike_record[0] = spikes["Ae"].get("s").squeeze()
     spike_records[step] = spikes["Ae"].get("s").squeeze()
