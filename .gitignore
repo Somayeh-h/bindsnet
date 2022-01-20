@@ -10,6 +10,7 @@ __pycache__/
 outputs/
 *.png 
 *.npy
+*.csv
 BindsNet_installation_commands.txt
 nordland_imageNames.txt 
 

@@ -7,9 +7,12 @@ import argparse
 from pathlib import Path 
 import matplotlib.pyplot as plt
 
+from codecarbon import EmissionsTracker
+
 from torchvision import transforms
 from tqdm import tqdm
 from data import *
+
 
 
 from bindsnet.datasets import MNIST
@@ -50,7 +53,7 @@ def save_connections(connections, interval=''):
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_neurons", type=int, default=400)
-parser.add_argument("--n_train", type=int, default=10)
+parser.add_argument("--n_train", type=int, default=100)
 parser.add_argument("--n_test", type=int, default=100)
 parser.add_argument("--n_clamp", type=int, default=1)
 parser.add_argument("--exc", type=float, default=22.5)
@@ -59,14 +62,14 @@ parser.add_argument("--theta_plus", type=float, default=0.05)
 parser.add_argument("--time", type=int, default=350)
 parser.add_argument("--dt", type=int, default=1)
 parser.add_argument("--intensity", type=float, default=4) # 32
-parser.add_argument("--update_interval", type=int, default=50)
+parser.add_argument("--update_interval", type=int, default=100)
 parser.add_argument("--train", dest="train", action="store_true")
 parser.add_argument("--test", dest="train", action="store_false")
 parser.add_argument("--plot", dest="plot", action="store_true")
 parser.add_argument("--gpu", dest="gpu", action="store_true")
 parser.add_argument("--device_id", type=int, default=0)
 parser.add_argument("--epochs", type=int, default=10)
-parser.set_defaults(plot=False, gpu=True, train=True)
+parser.set_defaults(plot=True, gpu=True, train=True)
 
 args = parser.parse_args()
 
@@ -156,6 +159,9 @@ network = DiehlAndCook2015(
 # Directs network to GPU
 if gpu:
     network.to("cuda")
+
+tracker = EmissionsTracker()
+
 
 # Voltage recording for excitatory and inhibitory layers.
 exc_voltage_monitor = Monitor(network.layers["Ae"], ["v"], time=time_p, device=device)
@@ -373,11 +379,15 @@ inference_time_all_test = []
 
 pbar = tqdm(total=n_test)
 # for step, batch in enumerate(test_dataset):
+
+
+tracker.start()
+
 for step in range(n_test):
     # if step > n_test:
     #     break
 
-    start_j = time.time() 
+    # start_j = time.time() 
     # Get next input sample.
     image = testing['x'][step].view([int(350/dt), 1, 28, 28])                      #  batch["encoded_image"]       
     label = testing['y'][step][0]       # batch["label"]   
@@ -390,17 +400,17 @@ for step in range(n_test):
     network.run(inputs=inputs, time=time_p, input_time_dim=1)
 
     
-    if step < 100: 
-        end_j = time.time()
-        inference_time = end_j - start_j 
-        inference_time_all_test.append( inference_time )
+    # if step < 100: 
+    #     end_j = time.time()
+    #     inference_time = end_j - start_j 
+    #     inference_time_all_test.append( inference_time )
 
-    if step == 99: 
-        print("Inference time all: ", inference_time_all_test)
-        mean_inference_time_test = np.mean(inference_time_all_test)
-        print("Mean inference time: ", mean_inference_time_test)
-        avg_inference_timeToSaveName = data_path + "avgInferenceTime_ne" + str(n_neurons) + "_test_E30"
-        np.save(avg_inference_timeToSaveName, np.array(inference_time_all_test) )
+    # if step == 99: 
+    #     print("Inference time all: ", inference_time_all_test)
+    #     mean_inference_time_test = np.mean(inference_time_all_test)
+    #     print("Mean inference time: ", mean_inference_time_test)
+    #     avg_inference_timeToSaveName = data_path + "avgInferenceTime_ne" + str(n_neurons) + "_test_E30"
+    #     np.save(avg_inference_timeToSaveName, np.array(inference_time_all_test) )
         
     # Add to spikes recording.
     spike_record[0] = spikes["Ae"].get("s").squeeze()
@@ -428,6 +438,9 @@ for step in range(n_test):
 
     pbar.set_description_str( f"Accuracy: {(max(accuracy['all'] ,accuracy['proportion'] ) / (step+1)):.3}" )
     pbar.update()
+
+
+tracker.stop()
 
 
 spike_record_np = spike_records.cpu().detach().numpy()
